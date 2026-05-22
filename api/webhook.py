@@ -5,54 +5,57 @@ import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# ================= LOGGING =================
 logging.basicConfig(level=logging.INFO)
 
-# ================= BOT TOKEN =================
 BOT_TOKEN = os.environ.get("7468327119:AAFzswUn3TAcDhI_OE62YP9AeEAl5JLm05w")
 
 if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN not set in Vercel environment variables")
+    raise Exception("BOT_TOKEN missing in environment variables")
 
-# ================= APPLICATION =================
+# ================= BOT =================
 app = Application.builder().token(BOT_TOKEN).build()
+
 
 # ================= COMMANDS =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ Bot is alive on Vercel")
+    await update.message.reply_text("🚀 Bot running on Vercel")
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🏓 Pong")
 
+
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("ping", ping))
 
-# initialize once at cold start
+
+# initialize ONCE safely
 import asyncio
 asyncio.get_event_loop().run_until_complete(app.initialize())
 
-# ================= VERCEL HANDLER =================
+
+# ================= VERCEL ENTRY =================
 def handler(request):
+
     try:
+
         if request.method == "GET":
             return {
                 "statusCode": 200,
-                "body": "Bot running"
+                "body": "OK - Bot is alive"
             }
 
-        if request.method != "POST":
-            return {
-                "statusCode": 405,
-                "body": "Method not allowed"
-            }
+        body = request.body
 
-        body = request.get_body().decode("utf-8")
+        if isinstance(body, bytes):
+            body = body.decode("utf-8")
+
         data = json.loads(body)
 
         update = Update.de_json(data, app.bot)
 
-        # IMPORTANT: run sync-safe (NO async loops in Vercel)
+        # SAFE execution WITHOUT nested event loop conflicts
         import asyncio
+
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
