@@ -1,12 +1,9 @@
 import os
 import json
 import logging
-from http.server import BaseHTTPRequestHandler
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
-
-import asyncio
 
 # ================= LOGGING =================
 logging.basicConfig(level=logging.INFO)
@@ -15,54 +12,61 @@ logging.basicConfig(level=logging.INFO)
 BOT_TOKEN = os.environ.get("7468327119:AAFzswUn3TAcDhI_OE62YP9AeEAl5JLm05w")
 
 if not BOT_TOKEN:
-    raise Exception("BOT_TOKEN is missing in Vercel env variables")
+    raise RuntimeError("BOT_TOKEN not set in Vercel environment variables")
 
-# ================= APP =================
+# ================= APPLICATION =================
 app = Application.builder().token(BOT_TOKEN).build()
 
 # ================= COMMANDS =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Bot is running 🚀")
+    await update.message.reply_text("✅ Bot is alive on Vercel")
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Pong 🏓")
+    await update.message.reply_text("🏓 Pong")
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("ping", ping))
 
-
-# ================= INIT ONCE (SAFE) =================
+# initialize once at cold start
+import asyncio
 asyncio.get_event_loop().run_until_complete(app.initialize())
 
+# ================= VERCEL HANDLER =================
+def handler(request):
+    try:
+        if request.method == "GET":
+            return {
+                "statusCode": 200,
+                "body": "Bot running"
+            }
 
-# ================= HANDLER =================
-class handler(BaseHTTPRequestHandler):
+        if request.method != "POST":
+            return {
+                "statusCode": 405,
+                "body": "Method not allowed"
+            }
 
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"OK - Bot is live")
+        body = request.get_body().decode("utf-8")
+        data = json.loads(body)
 
-    def do_POST(self):
-        try:
-            length = int(self.headers.get("content-length", 0))
-            body = self.rfile.read(length)
+        update = Update.de_json(data, app.bot)
 
-            update_data = json.loads(body.decode("utf-8"))
-            update = Update.de_json(update_data, app.bot)
+        # IMPORTANT: run sync-safe (NO async loops in Vercel)
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+        loop.run_until_complete(app.process_update(update))
 
-            loop.run_until_complete(app.process_update(update))
+        return {
+            "statusCode": 200,
+            "body": "ok"
+        }
 
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"ok")
+    except Exception as e:
+        logging.exception(e)
 
-        except Exception as e:
-            logging.exception(e)
-
-            self.send_response(500)
-            self.end_headers()
-            self.wfile.write(str(e).encode())
+        return {
+            "statusCode": 500,
+            "body": str(e)
+        }
