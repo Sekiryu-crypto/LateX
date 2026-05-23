@@ -1,53 +1,65 @@
 import json
 from http.server import BaseHTTPRequestHandler
 import urllib.request
+import urllib.error
+import os
 
-BOT_TOKEN = "YOUR_BOT_TOKEN"
+
+BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
 API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 
 # -------------------------
-# SEND MESSAGE FUNCTION
+# SAFE SEND MESSAGE (NON-BLOCKING STYLE)
 # -------------------------
 def send_message(chat_id, text):
     try:
-        data = json.dumps({
+        payload = json.dumps({
             "chat_id": chat_id,
             "text": text
         }).encode("utf-8")
 
         req = urllib.request.Request(
             f"{API_URL}/sendMessage",
-            data=data,
+            data=payload,
             headers={"Content-Type": "application/json"}
         )
 
-        urllib.request.urlopen(req, timeout=2)
+        # IMPORTANT: short timeout for Vercel stability
+        urllib.request.urlopen(req, timeout=3)
 
+    except urllib.error.URLError as e:
+        print("Telegram API error:", e)
     except Exception as e:
-        print("send error:", e)
+        print("send_message error:", e)
 
 
 # -------------------------
 # BOT LOGIC
 # -------------------------
 def handle_update(update):
-    message = update.get("message")
+    try:
+        message = update.get("message", {})
+        if not message:
+            return
 
-    if not message:
-        return
+        chat_id = message.get("chat", {}).get("id")
+        text = message.get("text", "")
 
-    chat_id = message["chat"]["id"]
-    text = message.get("text", "")
+        if not chat_id:
+            return
 
-    if text == "/start":
-        send_message(chat_id, "⚡ Bot is working on Vercel")
+        if text == "/start":
+            send_message(chat_id, "⚡ Bot is alive on Vercel")
 
-    elif text == "/ping":
-        send_message(chat_id, "pong ⚡")
+        elif text == "/ping":
+            send_message(chat_id, "pong ⚡")
 
-    else:
-        send_message(chat_id, f"Echo: {text}")
+        else:
+            send_message(chat_id, f"Echo: {text}")
+
+    except Exception as e:
+        print("handle_update error:", e)
 
 
 # -------------------------
@@ -55,18 +67,23 @@ def handle_update(update):
 # -------------------------
 class handler(BaseHTTPRequestHandler):
 
-    # FIX 501 ERROR (browser / GET request)
     def do_GET(self):
         self.send_response(200)
         self.send_header("Content-type", "application/json")
         self.end_headers()
         self.wfile.write(b'{"status":"alive"}')
 
-    # TELEGRAM WEBHOOK (POST)
     def do_POST(self):
         try:
-            content_length = int(self.headers["Content-Length"])
-            body = self.rfile.read(content_length)
+            content_length = self.headers.get("Content-Length")
+
+            if not content_length:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"ok":false,"error":"no content"}')
+                return
+
+            body = self.rfile.read(int(content_length))
             update = json.loads(body.decode("utf-8"))
 
             handle_update(update)
@@ -77,8 +94,9 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(b'{"ok":true}')
 
         except Exception as e:
-            print("error:", e)
+            print("WEBHOOK ERROR:", e)
 
+            # ALWAYS return 200 so Telegram doesn't retry spam
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b'{"ok":false}')
