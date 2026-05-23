@@ -1,5 +1,4 @@
 import json
-from http.server import BaseHTTPRequestHandler
 import urllib.request
 import urllib.error
 import os
@@ -10,7 +9,7 @@ API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 
 # -------------------------
-# SAFE SEND MESSAGE (NON-BLOCKING STYLE)
+# SEND MESSAGE (SAFE)
 # -------------------------
 def send_message(chat_id, text):
     try:
@@ -25,11 +24,8 @@ def send_message(chat_id, text):
             headers={"Content-Type": "application/json"}
         )
 
-        # IMPORTANT: short timeout for Vercel stability
         urllib.request.urlopen(req, timeout=3)
 
-    except urllib.error.URLError as e:
-        print("Telegram API error:", e)
     except Exception as e:
         print("send_message error:", e)
 
@@ -39,7 +35,7 @@ def send_message(chat_id, text):
 # -------------------------
 def handle_update(update):
     try:
-        message = update.get("message", {})
+        message = update.get("message")
         if not message:
             return
 
@@ -50,7 +46,7 @@ def handle_update(update):
             return
 
         if text == "/start":
-            send_message(chat_id, "⚡ Bot is alive on Vercel")
+            send_message(chat_id, "⚡ Bot is running on Vercel")
 
         elif text == "/ping":
             send_message(chat_id, "pong ⚡")
@@ -63,40 +59,49 @@ def handle_update(update):
 
 
 # -------------------------
-# VERCEL HANDLER
+# VERCEL SERVERLESS HANDLER
 # -------------------------
-class handler(BaseHTTPRequestHandler):
+def handler(request):
+    try:
+        method = request.get("method", "")
 
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "application/json")
-        self.end_headers()
-        self.wfile.write(b'{"status":"alive"}')
+        # GET request (health check)
+        if method == "GET":
+            return {
+                "statusCode": 200,
+                "body": json.dumps({"status": "alive"})
+            }
 
-    def do_POST(self):
-        try:
-            content_length = self.headers.get("Content-Length")
+        # POST request (Telegram webhook)
+        if method == "POST":
+            try:
+                body = request.get("body", "{}")
+                update = json.loads(body)
 
-            if not content_length:
-                self.send_response(200)
-                self.end_headers()
-                self.wfile.write(b'{"ok":false,"error":"no content"}')
-                return
+                handle_update(update)
 
-            body = self.rfile.read(int(content_length))
-            update = json.loads(body.decode("utf-8"))
+                return {
+                    "statusCode": 200,
+                    "body": json.dumps({"ok": True})
+                }
 
-            handle_update(update)
+            except Exception as e:
+                print("POST error:", e)
 
-            self.send_response(200)
-            self.send_header("Content-type", "application/json")
-            self.end_headers()
-            self.wfile.write(b'{"ok":true}')
+                return {
+                    "statusCode": 200,
+                    "body": json.dumps({"ok": False})
+                }
 
-        except Exception as e:
-            print("WEBHOOK ERROR:", e)
+        return {
+            "statusCode": 200,
+            "body": json.dumps({"ok": False, "msg": "invalid method"})
+        }
 
-            # ALWAYS return 200 so Telegram doesn't retry spam
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'{"ok":false}')
+    except Exception as e:
+        print("FATAL ERROR:", e)
+
+        return {
+            "statusCode": 200,
+            "body": json.dumps({"ok": False})
+        }
