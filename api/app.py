@@ -1,69 +1,75 @@
 import json
-import asyncio
-import httpx
 from http.server import BaseHTTPRequestHandler
+import urllib.request
 
 BOT_TOKEN = "YOUR_BOT_TOKEN"
 API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-client = httpx.AsyncClient(timeout=5)
 
-
-# ---------------------------
-# FAST MESSAGE SENDER
-# ---------------------------
-async def send_message(chat_id, text):
+# -------------------------
+# SEND MESSAGE FUNCTION
+# -------------------------
+def send_message(chat_id, text):
     try:
-        await client.post(
+        data = json.dumps({
+            "chat_id": chat_id,
+            "text": text
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
             f"{API_URL}/sendMessage",
-            json={
-                "chat_id": chat_id,
-                "text": text
-            }
+            data=data,
+            headers={"Content-Type": "application/json"}
         )
+
+        urllib.request.urlopen(req, timeout=2)
+
     except Exception as e:
         print("send error:", e)
 
 
-# ---------------------------
-# CORE LOGIC
-# ---------------------------
-async def handle_update(update):
-    try:
-        message = update.get("message")
+# -------------------------
+# BOT LOGIC
+# -------------------------
+def handle_update(update):
+    message = update.get("message")
 
-        if not message:
-            return
+    if not message:
+        return
 
-        chat_id = message["chat"]["id"]
-        text = message.get("text", "")
+    chat_id = message["chat"]["id"]
+    text = message.get("text", "")
 
-        # COMMANDS
-        if text == "/start":
-            await send_message(chat_id, "⚡ Bot is live on Vercel (fast mode)")
+    if text == "/start":
+        send_message(chat_id, "⚡ Bot is working on Vercel")
 
-        elif text == "/ping":
-            await send_message(chat_id, "pong ⚡")
+    elif text == "/ping":
+        send_message(chat_id, "pong ⚡")
 
-        else:
-            await send_message(chat_id, f"Echo: {text}")
-
-    except Exception as e:
-        print("handler error:", e)
+    else:
+        send_message(chat_id, f"Echo: {text}")
 
 
-# ---------------------------
-# VERCEL ENTRY POINT
-# ---------------------------
+# -------------------------
+# VERCEL HANDLER
+# -------------------------
 class handler(BaseHTTPRequestHandler):
+
+    # FIX 501 ERROR (browser / GET request)
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "application/json")
+        self.end_headers()
+        self.wfile.write(b'{"status":"alive"}')
+
+    # TELEGRAM WEBHOOK (POST)
     def do_POST(self):
         try:
             content_length = int(self.headers["Content-Length"])
             body = self.rfile.read(content_length)
             update = json.loads(body.decode("utf-8"))
 
-            # ⚡ IMPORTANT: DO NOT BLOCK RESPONSE
-            asyncio.run(handle_update(update))
+            handle_update(update)
 
             self.send_response(200)
             self.send_header("Content-type", "application/json")
@@ -71,7 +77,7 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(b'{"ok":true}')
 
         except Exception as e:
-            print("webhook error:", e)
+            print("error:", e)
 
             self.send_response(200)
             self.end_headers()
