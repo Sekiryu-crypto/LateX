@@ -1,92 +1,77 @@
-from flask import Flask, request
-import telebot
-import os
-import time
+import json
+from http.server import BaseHTTPRequestHandler
+import urllib.request
 
-# ---------------- CONFIG ---------------- #
+BOT_TOKEN = "YOUR_BOT_TOKEN"
+API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-TOKEN = os.getenv("BOT_TOKEN")
 
-bot = telebot.TeleBot(TOKEN)
+# ---------------------------
+# FAST SEND FUNCTION (NO EXTRA LIBS)
+# ---------------------------
+def send_message(chat_id, text):
+    try:
+        data = json.dumps({
+            "chat_id": chat_id,
+            "text": text
+        }).encode("utf-8")
 
-app = Flask(__name__)
+        req = urllib.request.Request(
+            f"{API_URL}/sendMessage",
+            data=data,
+            headers={"Content-Type": "application/json"}
+        )
 
-START_TIME = time.time()
+        urllib.request.urlopen(req, timeout=2)
 
-# ---------------- HOME PAGE ---------------- #
+    except Exception as e:
+        print("send error:", e)
 
-@app.route("/", methods=["GET"])
-def home():
 
-    uptime = int(time.time() - START_TIME)
+# ---------------------------
+# HANDLER LOGIC (LIGHTWEIGHT ONLY)
+# ---------------------------
+def process_update(update):
+    message = update.get("message")
+    if not message:
+        return
 
-    return f"""
-🚀 Late-X Bot Running Successfully!
+    chat_id = message["chat"]["id"]
+    text = message.get("text", "")
 
-Status: Online
-Uptime: {uptime} seconds
-"""
+    # FAST COMMAND ROUTING
+    if text == "/start":
+        send_message(chat_id, "⚡ Bot is running FREE on Vercel")
 
-# ---------------- WEBHOOK ---------------- #
+    elif text == "/ping":
+        send_message(chat_id, "pong ⚡")
 
-@app.route("/api/webhook", methods=["POST", "GET"])
-def webhook():
+    else:
+        send_message(chat_id, f"Echo: {text}")
 
-    if request.method == "POST":
 
-        json_str = request.stream.read().decode("utf-8")
+# ---------------------------
+# VERCEL ENTRYPOINT
+# ---------------------------
+class handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        try:
+            content_length = int(self.headers["Content-Length"])
+            body = self.rfile.read(content_length)
+            update = json.loads(body.decode("utf-8"))
 
-        update = telebot.types.Update.de_json(json_str)
+            # ⚡ DO EVERYTHING FAST + SIMPLE
+            process_update(update)
 
-        bot.process_new_updates([update])
+            # ALWAYS RESPOND FAST
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"ok":true}')
 
-        return "OK", 200
+        except Exception as e:
+            print("error:", e)
 
-    return "Webhook Active", 200
-
-# ---------------- BOT COMMANDS ---------------- #
-
-@bot.message_handler(commands=['start'])
-def start(message):
-
-    bot.reply_to(
-        message,
-        "🚀 Late-X Bot is working successfully on Vercel!"
-    )
-
-@bot.message_handler(commands=['ping'])
-def ping(message):
-
-    bot.reply_to(
-        message,
-        "🏓 Pong!"
-    )
-
-@bot.message_handler(commands=['help'])
-def help_command(message):
-
-    bot.reply_to(
-        message,
-        """
-📚 Available Commands
-
-/start - Start bot
-/ping - Check bot
-/help - Show commands
-/uptime - Bot uptime
-"""
-    )
-
-@bot.message_handler(commands=['uptime'])
-def uptime(message):
-
-    uptime_seconds = int(time.time() - START_TIME)
-
-    bot.reply_to(
-        message,
-        f"⏱ Bot Uptime: {uptime_seconds} seconds"
-    )
-
-# ---------------- IMPORTANT ---------------- #
-
-app = app
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'{"ok":false}')
