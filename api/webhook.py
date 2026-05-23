@@ -1,7 +1,4 @@
 # api/webhook.py
-# Self-contained Vercel serverless handler for Telegram bot.
-# All bot logic is in this single file so imports never fail.
-
 from http.server import BaseHTTPRequestHandler
 import asyncio
 import json
@@ -12,10 +9,8 @@ import sys
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple
 
-# ── Token from Vercel environment variable ────────────────────────────────────
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 
-# ── In-memory storage (resets on cold start) ─────────────────────────────────
 _warnings: Dict[Tuple[int, int], int] = {}
 _notes: Dict[int, Dict[str, str]] = {}
 _rules: Dict[int, str] = {}
@@ -25,7 +20,6 @@ _blacklist: Dict[int, list] = {}
 DEFAULT_RULES = "📜 Group Rules:\n1. Be respectful\n2. No spam\n3. Follow admin instructions"
 DEFAULT_WELCOME = "👋 Welcome {mention} to {title}!"
 
-# ── Lazy imports (so crash shows clear error if package missing) ──────────────
 try:
     from telegram import Update, ChatPermissions, ChatMemberStatus
     from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, filters
@@ -35,7 +29,6 @@ except Exception as e:
     IMPORTS_OK = False
     IMPORT_ERROR = str(e)
 
-# ── App singleton ─────────────────────────────────────────────────────────────
 _app = None
 
 def get_app():
@@ -43,8 +36,6 @@ def get_app():
     if _app is None:
         _app = build_app()
     return _app
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def is_admin(update, user_id: int) -> bool:
     try:
@@ -79,8 +70,6 @@ async def resolve_user(update, args: list) -> Optional[int]:
 
 def fmt(user) -> str:
     return f"@{user.username}" if getattr(user, "username", None) else (user.first_name or "User")
-
-# ── Commands ──────────────────────────────────────────────────────────────────
 
 async def cmd_start(update, context):
     if update.effective_chat.type == "private":
@@ -220,9 +209,7 @@ async def cmd_warn(update, context):
                 until_date=datetime.now() + timedelta(hours=24),
             )
             _warnings[key] = 0
-            await update.message.reply_text(
-                f"🔇 {fmt(user)} hit 3/3 warnings — muted 24h. Warnings reset."
-            )
+            await update.message.reply_text(f"🔇 {fmt(user)} hit 3/3 warnings — muted 24h. Warnings reset.")
         except Exception as e:
             await update.message.reply_text(f"⚠️ Warned {count}/3 but mute failed: {e}")
     else:
@@ -482,7 +469,7 @@ async def cmd_getnote(update, context):
     if text:
         await update.message.reply_text(text)
     else:
-        await update.message.reply_text(f"⚠️ Note <code>{context.args[0]}</code> not found.", parse_mode="HTML")
+        await update.message.reply_text(f"⚠️ Note not found.", parse_mode="HTML")
 
 async def cmd_delnote(update, context):
     if not await check_admin(update): return
@@ -509,4 +496,19 @@ async def cmd_id(update, context):
     if update.effective_chat.type == "private":
         await update.message.reply_text(f"🆔 Your ID: <code>{update.effective_user.id}</code>", parse_mode="HTML")
     elif update.message.reply_to_message and update.message.reply_to_message.from_user:
-        u = update.message.reply_
+        u = update.message.reply_to_message.from_user
+        await update.message.reply_text(f"👤 {fmt(u)} ID: <code>{u.id}</code>", parse_mode="HTML")
+    else:
+        await update.message.reply_text(
+            f"👤 Your ID: <code>{update.effective_user.id}</code>\n"
+            f"💬 Chat ID: <code>{update.effective_chat.id}</code>",
+            parse_mode="HTML"
+        )
+
+async def cmd_info(update, context):
+    uid = await resolve_user(update, context.args) or update.effective_user.id
+    try:
+        member = await update.effective_chat.get_member(uid)
+        u = member.user
+        joined = member.joined_date.strftime("%Y-%m-%d") if getattr(member, "joined_date", None) else "N/A"
+     
