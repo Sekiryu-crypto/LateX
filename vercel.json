@@ -8,8 +8,17 @@
   ],
   "routes": [
     {
-      "src": "/(.*)",
+      "src": "/webhook",
+      "dest": "api/webhook.py"
+    },
+    {
+      "src": "/",
       "dest": "api/webhook.py"
     }
-  ]
-} 
+  ],
+  "functions": {
+    "api/webhook.py": {
+      "maxDuration": 10
+    }
+  }
+}
