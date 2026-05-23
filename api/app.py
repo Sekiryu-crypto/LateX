@@ -1,15 +1,16 @@
+import os
 import json
 import urllib.request
-import urllib.error
-import os
+from flask import Flask, request, jsonify
 
+app = Flask(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
 API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 
 # -------------------------
-# SEND MESSAGE (SAFE)
+# SEND MESSAGE
 # -------------------------
 def send_message(chat_id, text):
     try:
@@ -31,77 +32,52 @@ def send_message(chat_id, text):
 
 
 # -------------------------
-# BOT LOGIC
+# TELEGRAM HANDLER
 # -------------------------
 def handle_update(update):
-    try:
-        message = update.get("message")
-        if not message:
-            return
+    message = update.get("message")
 
-        chat_id = message.get("chat", {}).get("id")
-        text = message.get("text", "")
+    if not message:
+        return
 
-        if not chat_id:
-            return
+    chat_id = message.get("chat", {}).get("id")
+    text = message.get("text", "")
 
-        if text == "/start":
-            send_message(chat_id, "⚡ Bot is running on Vercel")
+    if not chat_id:
+        return
 
-        elif text == "/ping":
-            send_message(chat_id, "pong ⚡")
+    if text == "/start":
+        send_message(chat_id, "⚡ Flask bot running on Vercel")
 
-        else:
-            send_message(chat_id, f"Echo: {text}")
+    elif text == "/ping":
+        send_message(chat_id, "pong ⚡")
 
-    except Exception as e:
-        print("handle_update error:", e)
+    else:
+        send_message(chat_id, f"Echo: {text}")
 
 
 # -------------------------
-# VERCEL SERVERLESS HANDLER
+# HEALTH CHECK
 # -------------------------
-def handler(request):
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({"status": "alive"})
+
+
+# -------------------------
+# TELEGRAM WEBHOOK
+# -------------------------
+@app.route("/webhook", methods=["POST"])
+def webhook():
     try:
-        method = request.get("method", "")
-
-        # GET request (health check)
-        if method == "GET":
-            return {
-                "statusCode": 200,
-                "body": json.dumps({"status": "alive"})
-            }
-
-        # POST request (Telegram webhook)
-        if method == "POST":
-            try:
-                body = request.get("body", "{}")
-                update = json.loads(body)
-
-                handle_update(update)
-
-                return {
-                    "statusCode": 200,
-                    "body": json.dumps({"ok": True})
-                }
-
-            except Exception as e:
-                print("POST error:", e)
-
-                return {
-                    "statusCode": 200,
-                    "body": json.dumps({"ok": False})
-                }
-
-        return {
-            "statusCode": 200,
-            "body": json.dumps({"ok": False, "msg": "invalid method"})
-        }
+        update = request.get_json()
+        handle_update(update)
+        return jsonify({"ok": True})
 
     except Exception as e:
-        print("FATAL ERROR:", e)
+        print("webhook error:", e)
+        return jsonify({"ok": False})
 
-        return {
-            "statusCode": 200,
-            "body": json.dumps({"ok": False})
-        }
+
+# REQUIRED FOR VERCEL
+app = app
