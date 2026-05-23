@@ -17,9 +17,7 @@ START_TIME = time.time()
 
 @app.route("/", methods=["GET"])
 def home():
-
     uptime = int(time.time() - START_TIME)
-
     return f"""
 🚀 Late-X Bot Running Successfully!
 
@@ -31,24 +29,17 @@ Uptime: {uptime} seconds
 
 @app.route("/api/webhook", methods=["POST", "GET"])
 def webhook():
-
     if request.method == "POST":
-
         json_str = request.stream.read().decode("utf-8")
-
         update = telebot.types.Update.de_json(json_str)
-
         bot.process_new_updates([update])
-
         return "OK", 200
-
     return "Webhook Active", 200
 
 # ---------------- BOT COMMANDS ---------------- #
 
 @bot.message_handler(commands=['start'])
 def start(message):
-
     bot.reply_to(
         message,
         "🚀 Late-X Bot is working successfully on Vercel!"
@@ -56,7 +47,6 @@ def start(message):
 
 @bot.message_handler(commands=['ping'])
 def ping(message):
-
     bot.reply_to(
         message,
         "🏓 Pong!"
@@ -64,7 +54,6 @@ def ping(message):
 
 @bot.message_handler(commands=['help'])
 def help_command(message):
-
     bot.reply_to(
         message,
         """
@@ -79,15 +68,13 @@ def help_command(message):
 
 @bot.message_handler(commands=['uptime'])
 def uptime(message):
-
     uptime_seconds = int(time.time() - START_TIME)
-
     bot.reply_to(
         message,
         f"⏱ Bot Uptime: {uptime_seconds} seconds"
     )
 
-# ------------------- GROUP MANAGEMENT COMMANDS (ADDED) ------------------- #
+# ------------------- GROUP MANAGEMENT COMMANDS ------------------- #
 
 def is_group(message):
     return message.chat.type in ['group', 'supergroup']
